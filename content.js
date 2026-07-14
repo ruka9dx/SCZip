@@ -9,7 +9,7 @@ async function resolveCurrentTrack(clientId) {
     throw new Error(`トラック情報の取得に失敗しました (status: ${res.status}, body: ${bodyText.slice(0, 200)})`);
   }
   const data = await res.json();
-  if (data.kind !== "track") throw new Error("このページは楽曲ページではありません");
+  if (data.kind !== "track" && data.kind !== "playlist") throw new Error("このページは楽曲ページではありません");
   return data;
 }
 
@@ -61,6 +61,37 @@ function buildStreamRequestUrl(transcoding, clientId) {
   if (!transcoding || !transcoding.url) return null;
   const separator = transcoding.url.includes('?') ? '&' : '?';
   return `${transcoding.url}${separator}client_id=${encodeURIComponent(clientId)}`;
+}
+
+async function fetchFullPlaylist(playlist, clientId) {
+  if (!playlist || !playlist.id) return playlist;
+  try {
+    const res = await fetch(`https://api-v2.soundcloud.com/playlists/${playlist.id}?client_id=${encodeURIComponent(clientId)}&limit=200`);
+    if (!res.ok) return playlist;
+    const data = await res.json();
+    if (data.kind === 'playlist' && Array.isArray(data.tracks) && data.tracks.length > 0) {
+      return data;
+    }
+  } catch (e) {
+    console.warn('fetchFullPlaylist failed', e);
+  }
+  return playlist;
+}
+
+async function fetchFullTrack(track, clientId) {
+  if (!track || !track.id) return track;
+  if (track.media && Array.isArray(track.media.transcodings) && track.media.transcodings.length > 0) {
+    return track;
+  }
+  try {
+    const res = await fetch(`https://api-v2.soundcloud.com/tracks/${track.id}?client_id=${encodeURIComponent(clientId)}`);
+    if (!res.ok) return track;
+    const data = await res.json();
+    if (data && data.kind === 'track') return data;
+  } catch (e) {
+    console.warn('fetchFullTrack failed', e);
+  }
+  return track;
 }
 
 function ensureToast() {
@@ -122,7 +153,45 @@ async function extractAndZip() {
   const clientId = await fetchClientId();
   if (!clientId) throw new Error("client_idが取得できませんでした");
 
-  const track = await resolveCurrentTrack(clientId);
+  let data = await resolveCurrentTrack(clientId);
+  if (data.kind === 'playlist') {
+    data = await fetchFullPlaylist(data, clientId);
+    const playlistTitle = data.title || 'playlist';
+    const tracks = Array.isArray(data.tracks) ? data.tracks : [];
+    if (tracks.length === 0) throw new Error("プレイリストにトラックがありません");
+
+    const entries = [];
+    for (let index = 0; index < tracks.length; index++) {
+      const track = await fetchFullTrack(tracks[index], clientId);
+      const artworkUrl = getArtworkUrl(track);
+      const progressive = findProgressiveTranscoding(track);
+      entries.push({
+        id: track.id,
+        title: track.title || `track-${index + 1}`,
+        artworkUrl,
+        clientId,
+        streamUrl: progressive ? buildStreamRequestUrl(progressive, clientId) : null,
+        downloadable: track.downloadable
+      });
+    }
+    const available = entries.filter((item) => item.downloadable || item.streamUrl);
+    if (available.length === 0) throw new Error("取得可能なトラックがありませんでした");
+
+    const skipped = entries.length - available.length;
+    const promptMessage = skipped > 0
+      ? `プレイリスト「${playlistTitle}」の ${available.length} 曲をまとめて ZIP にします。取得不可の曲 ${skipped} 曲は除外されます。時間がかかる場合があります。実行しますか?`
+      : `プレイリスト「${playlistTitle}」の ${available.length} 曲をまとめて ZIP にします。時間がかかる場合があります。実行しますか?`;
+    const proceed = window.confirm(promptMessage);
+    if (!proceed) return { ok: true, message: "キャンセルしました" };
+
+    const result = await sendToBackground({
+      action: "downloadPlaylistZip",
+      playlist: { title: playlistTitle, tracks: available }
+    });
+    return result || { ok: false, message: "応答がありませんでした" };
+  }
+
+  const track = data;
   const artworkUrl = getArtworkUrl(track);
 
   if (!track.downloadable) {

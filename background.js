@@ -193,6 +193,108 @@ async function resolveStreamAudioUrl(streamUrl) {
   return streamUrl;
 }
 
+async function getDownloadRedirectUri(trackId, clientId, headers) {
+  const downloadUrl = `https://api-v2.soundcloud.com/tracks/${trackId}/download?client_id=${encodeURIComponent(clientId)}`;
+  const res = await fetch(downloadUrl, { headers });
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => "");
+    throw new Error(`ダウンロードリンクの取得に失敗しました (status: ${res.status}, body: ${bodyText.slice(0, 200)})`);
+  }
+  const data = await res.json();
+  if (!data.redirectUri) {
+    throw new Error(`redirectUriが応答に含まれていません: ${JSON.stringify(data).slice(0, 200)}`);
+  }
+  return data.redirectUri;
+}
+
+async function downloadPlaylistZip(playlist, tabId) {
+  const prefs = await new Promise((r) => chrome.storage.sync.get({ includeArtwork: true, saveAs: false, chunkMode: 'normal', artworkFormat: 'jpg' }, r));
+  const tracks = Array.isArray(playlist.tracks) ? playlist.tracks : [];
+  if (tracks.length === 0) return { ok: false, message: "プレイリストにダウンロード可能な曲がありませんでした" };
+
+  const totalTracks = tracks.length;
+  const zip = new JSZip();
+  const playlistName = safeFileName(playlist.title || 'playlist');
+  const folder = zip.folder(playlistName);
+  const failed = [];
+
+  reportProgress(tabId, `プレイリストを処理しています...`, 1, totalTracks);
+  const authHeader = await getAuthHeader();
+  const headers = authHeader ? { Authorization: authHeader } : {};
+
+  for (let i = 0; i < tracks.length; i++) {
+    const track = tracks[i];
+    reportProgress(tabId, `トラック ${i + 1}/${totalTracks} を処理中...`, i + 1, totalTracks);
+    try {
+      let audioFetchUrl;
+      if (track.streamUrl) {
+        audioFetchUrl = await resolveStreamAudioUrl(track.streamUrl);
+      } else {
+        audioFetchUrl = await getDownloadRedirectUri(track.id, track.clientId, headers);
+      }
+
+      const audioRes = await fetch(audioFetchUrl, { headers });
+      if (!audioRes.ok) throw new Error(`音声ファイルの取得に失敗しました (status: ${audioRes.status})`);
+      const audioBlob = await audioRes.blob();
+      const audioContentType = audioRes.headers.get('content-type') || '';
+
+      let artworkBlob = null;
+      if (prefs.includeArtwork && track.artworkUrl) {
+        const artworkRes = await fetch(track.artworkUrl);
+        if (artworkRes.ok) {
+          artworkBlob = await artworkRes.blob();
+          if (prefs.artworkFormat === 'png') {
+            artworkBlob = await convertArtworkBlob(artworkBlob, 'png');
+          }
+        }
+      }
+
+      const trackSafe = safeFileName(track.title || `track-${i + 1}`);
+      const trackFolderName = `${String(i + 1).padStart(2, '0')}. ${trackSafe}`;
+      const trackFolder = folder.folder(trackFolderName);
+      const audioExt = audioFetchUrl.includes('.wav') || audioContentType.includes('wav')
+        ? 'wav'
+        : audioFetchUrl.includes('.m4a') || audioContentType.includes('m4a') || audioContentType.includes('mp4')
+        ? 'm4a'
+        : audioFetchUrl.includes('.ogg') || audioContentType.includes('ogg')
+        ? 'ogg'
+        : audioContentType.includes('flac')
+        ? 'flac'
+        : 'mp3';
+      const audioData = new Uint8Array(await audioBlob.arrayBuffer());
+      trackFolder.file(`${trackSafe}.${audioExt}`, audioData);
+
+      if (artworkBlob) {
+        const artData = new Uint8Array(await artworkBlob.arrayBuffer());
+        const artMime = artworkBlob.type || '';
+        const artworkExt = artMime.includes('png') ? 'png' : 'jpg';
+        trackFolder.file(`${trackSafe}_artwork.${artworkExt}`, artData);
+      }
+    } catch (e) {
+      failed.push({ title: track.title || `track-${i + 1}`, reason: e.message });
+    }
+  }
+
+  if (zip._update) {} // noop to retain zip usage
+  if (failed.length === totalTracks) {
+    return { ok: false, message: 'プレイリスト内の全トラックの取得に失敗しました' };
+  }
+
+  if (failed.length > 0) {
+    const errorText = failed.map((item) => `${item.title}: ${item.reason}`).join('\n');
+    folder.file('failed_tracks.txt', errorText);
+  }
+
+  reportProgress(tabId, 'ZIPを生成中...', totalTracks, totalTracks);
+  const arrayBuf = await zip.generateAsync({ type: 'arraybuffer' });
+  const content = new Blob([new Uint8Array(arrayBuf)], { type: 'application/zip' });
+  const finalFileName = `${playlistName}.zip`;
+
+  reportProgress(tabId, '保存中...', totalTracks, totalTracks);
+  const result = await triggerDownload(content, finalFileName, tabId, !!prefs.saveAs);
+  return result.ok ? { ok: true, message: `プレイリストZIP保存が完了しました${failed.length > 0 ? '（一部失敗トラックあり）' : ''}` } : result;
+}
+
 async function downloadZip(track, tabId) {
   // load settings
   const prefs = await new Promise((r) => chrome.storage.sync.get({ includeArtwork: true, saveAs: false, chunkMode: 'normal', artworkFormat: 'jpg' }, r));
@@ -306,6 +408,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "downloadZip") {
     const tabId = sender.tab && sender.tab.id;
     downloadZip(msg.track, tabId)
+      .then(sendResponse)
+      .catch((err) => sendResponse({ ok: false, message: `エラー: ${err.message}` }));
+    return true;
+  }
+  if (msg.action === "downloadPlaylistZip") {
+    const tabId = sender.tab && sender.tab.id;
+    downloadPlaylistZip(msg.playlist, tabId)
       .then(sendResponse)
       .catch((err) => sendResponse({ ok: false, message: `エラー: ${err.message}` }));
     return true;

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SCZip",
-  "version": "1.0",
+  "version": "0.1.0",
   "description": "ダウンロード許可済みのSoundCloud楽曲のジャケット画像と音声をZIPで保存します",
   "permissions": ["activeTab", "contextMenus", "scripting", "webRequest", "storage", "downloads", "offscreen"],
   "host_permissions": [
@@ -11,6 +11,11 @@
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "image/icon.png",
+    "48": "image/icon.png",
+    "128": "image/icon.png"
   },
   "options_ui": {
     "page": "options.html",

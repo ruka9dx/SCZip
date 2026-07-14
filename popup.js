@@ -4,6 +4,22 @@ const barInner = document.getElementById("barInner");
 const extractBtn = document.getElementById("extractBtn");
 const spinner = extractBtn && extractBtn.querySelector('.spinner');
 
+function applyPopupTheme(theme) {
+  if (theme === 'system') {
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.body.classList.toggle('dark', dark);
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+      document.body.classList.toggle('dark', e.matches);
+    });
+  } else {
+    document.body.classList.toggle('dark', theme === 'dark');
+  }
+}
+
+chrome.storage.sync.get({ theme: 'light' }, (data) => {
+  applyPopupTheme(data.theme);
+});
+
 function setProgress(message, index, total) {
   statusEl.textContent = message;
   if (typeof index === "number" && typeof total === "number" && total > 0) {
@@ -54,3 +70,11 @@ document.getElementById("extractBtn").addEventListener("click", () => {
     }
   });
 });
+
+const openOptionsBtn = document.getElementById('openOptions');
+if (openOptionsBtn) {
+  openOptionsBtn.addEventListener('click', () => {
+    if (chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage();
+    else chrome.tabs.create({ url: 'options.html' });
+  });
+}

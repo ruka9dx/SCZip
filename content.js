@@ -49,6 +49,20 @@ function getArtworkUrl(track) {
   return artworkUrl + (artworkUrl.includes('.') ? '' : '-t500x500.jpg');
 }
 
+function findProgressiveTranscoding(track) {
+  const transcodings = track.media?.transcodings || [];
+  return transcodings.find((item) => {
+    const format = item.format || {};
+    return format.protocol === 'progressive' && typeof format.mime_type === 'string' && format.mime_type.startsWith('audio/');
+  });
+}
+
+function buildStreamRequestUrl(transcoding, clientId) {
+  if (!transcoding || !transcoding.url) return null;
+  const separator = transcoding.url.includes('?') ? '&' : '?';
+  return `${transcoding.url}${separator}client_id=${encodeURIComponent(clientId)}`;
+}
+
 function ensureToast() {
   let toast = document.getElementById("__sc_zip_toast");
   if (!toast) {
@@ -112,6 +126,23 @@ async function extractAndZip() {
   const artworkUrl = getArtworkUrl(track);
 
   if (!track.downloadable) {
+    const progressive = findProgressiveTranscoding(track);
+    if (progressive) {
+      const proceed = window.confirm(
+        "この曲はダウンロードが許可されていません。ストリーミング音声を取得してZIPにしますか?"
+      );
+      if (!proceed) return { ok: true, message: "キャンセルしました" };
+      const result = await sendToBackground({
+        action: "downloadZip",
+        track: {
+          title: track.title,
+          artworkUrl,
+          streamUrl: buildStreamRequestUrl(progressive, clientId)
+        }
+      });
+      return result || { ok: false, message: "応答がありませんでした" };
+    }
+
     const proceed = window.confirm(
       "この曲はダウンロードが許可されていません。ジャケット画像だけダウンロードしますか?"
     );

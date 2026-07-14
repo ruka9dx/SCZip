@@ -1,0 +1,208 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SCZip 設定</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f8fa;
+    --panel: #fff;
+    --panel-alt: #f1f3f5;
+    --text: #202124;
+    --muted: #5f6368;
+    --border: #dadce0;
+    --accent: #1a73e8;
+    --accent-subtle: rgba(26,115,232,0.12);
+    --danger: #d93025;
+  }
+  body.dark {
+    color-scheme: dark;
+    --bg: #202124;
+    --panel: #303134;
+    --panel-alt: #252525;
+    --text: #e8eaed;
+    --muted: #9aa0a6;
+    --border: #5f6368;
+    --accent: #8ab4f8;
+    --accent-subtle: rgba(138,180,248,0.18);
+    --danger: #f28b82;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+    margin: 0;
+    min-height: 100vh;
+    padding: 24px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    background: radial-gradient(circle at top left, rgba(26,115,232,0.12), transparent 24%), var(--bg);
+    color: var(--text);
+    transition: background 0.3s ease, color 0.3s ease;
+  }
+  .panel {
+    width: min(520px, 100%);
+    max-width: 520px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0 0 18px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 16px;
+    margin-bottom: 18px;
+    animation: fadeIn 0.32s ease both;
+    width: min(460px, 100%);
+  }
+  .section {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .section:last-child { margin-bottom: 0; }
+  label {
+    display: block;
+    margin: 0 0 6px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  select,
+  input[type=number] {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel-alt);
+    color: var(--text);
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+  select:focus,
+  input[type=number]:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-subtle);
+  }
+  .row { display:flex;gap:12px;align-items:center; }
+  .row > div { flex:1; }
+  .switch-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .switch-label input { margin: 0; cursor: pointer; }
+  .actions { display:flex; gap: 10px; align-items:center; margin-top: 10px; }
+  button {
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 0;
+    cursor: pointer;
+    font-weight: 600;
+    transition: transform 0.18s ease, background 0.2s ease;
+  }
+  button:hover { transform: translateY(-1px); }
+  #saveBtn { background: var(--accent); color: #fff; }
+  #resetBtn { background: var(--panel-alt); color: var(--text); border: 1px solid var(--border); }
+  #saveBtn:active, #resetBtn:active { transform: translateY(0); }
+  .note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .theme-options { display: flex; gap: 10px; }
+  .theme-option {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--panel-alt);
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  }
+  .theme-option.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-subtle);
+    background: rgba(26,115,232,0.08);
+  }
+  .theme-option input { display:none; }
+  .theme-option span { display:block; font-size:14px; font-weight:600; color: var(--text); }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <h1>SCZip 設定</h1>
+    <div class="section">
+      <label>テーマ</label>
+      <div class="theme-options">
+        <label class="theme-option" id="themeLight">
+          <input type="radio" name="theme" value="light" />
+          <span>ライト</span>
+        </label>
+        <label class="theme-option" id="themeDark">
+          <input type="radio" name="theme" value="dark" />
+          <span>ダーク</span>
+        </label>
+        <label class="theme-option" id="themeSystem">
+          <input type="radio" name="theme" value="system" />
+          <span>システム</span>
+        </label>
+      </div>
+    </div>
+    <div class="section">
+      <label for="includeArtwork">ジャケット画像をZIPに含める</label>
+      <div class="row"><div><input id="includeArtwork" type="checkbox" /> 同梱する</div></div>
+    </div>
+
+    <div class="section">
+      <label for="artworkFormat">ジャケット画像の形式</label>
+      <div class="row"><div>
+        <select id="artworkFormat">
+          <option value="jpg">JPG(既定)</option>
+          <option value="png">PNG</option>
+        </select>
+      </div></div>
+      <div class="note">JPG/PNGを指定できます。</div>
+    </div>
+
+    <div class="section">
+      <label for="chunkMode">チャンク送信モード</label>
+      <select id="chunkMode">
+        <option value="safe">安全 (128KB)</option>
+        <option value="normal">標準 (512KB)</option>
+        <option value="fast">速い (2MB)</option>
+        <option value="custom">カスタム</option>
+      </select>
+      <div id="customRow" style="display:none;margin-top:8px">
+        <label for="customSize">カスタムサイズ</label>
+        <div class="row"><div>
+          <input id="customSize" type="number" min="1" value="512" />
+          <select id="customUnit">
+            <option value="KB">KB</option>
+            <option value="MB">MB</option>
+          </select>
+          <span class="note" style="margin-left:0">単位を選択してください。</span>
+        </div></div>
+      </div>
+      <div class="note">チャンクが大きいほどダウンロードは速くなりますが、ブラウザのメッセージ制限に注意してください。</div>
+    </div>
+
+    <div class="section">
+      <label for="saveAs">保存前に「名前を付けて保存」を表示</label>
+      <div class="row"><div><input id="saveAs" type="checkbox" /> 保存時にダイアログを出す</div></div>
+    </div>
+
+    <div class="actions">
+      <button id="saveBtn">保存</button>
+      <button id="resetBtn">デフォルトに戻す</button>
+    </div>
+    <div id="status" class="note"></div>
+  </div>
+
+<script src="options.js"></script>
+</body>
+</html>

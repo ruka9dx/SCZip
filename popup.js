@@ -34,6 +34,13 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
+function openSoundCloudTab(tabId) {
+  const shouldOpen = window.confirm("このページは SoundCloud の曲ページではありません。新しいタブで SoundCloud を開いて実行しますか?");
+  if (shouldOpen) {
+    chrome.tabs.create({ url: "https://soundcloud.com" });
+  }
+}
+
 document.getElementById("extractBtn").addEventListener("click", () => {
   // start
   if (extractBtn) { extractBtn.disabled = true; extractBtn.classList.add('loading'); }
@@ -42,7 +49,15 @@ document.getElementById("extractBtn").addEventListener("click", () => {
   setProgress("処理中...");
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (tabs[0] && tabs[0].id) {
-      chrome.tabs.sendMessage(tabs[0].id, { action: "extractZip" }, (response) => {
+      const tab = tabs[0];
+      const url = tab.url || "";
+      if (!url.includes("soundcloud.com")) {
+        setProgress("SoundCloud の楽曲ページを開いてから実行してください");
+        openSoundCloudTab(tab.id);
+        if (extractBtn) { extractBtn.disabled = false; extractBtn.classList.remove('loading'); }
+        return;
+      }
+      chrome.tabs.sendMessage(tab.id, { action: "extractZip" }, (response) => {
         if (chrome.runtime.lastError) {
           setProgress(`エラー: ${chrome.runtime.lastError.message}`);
           if (extractBtn) { extractBtn.disabled = false; extractBtn.classList.remove('loading'); }

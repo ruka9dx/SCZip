@@ -7,11 +7,17 @@
   .dark{--bg:#111827;--text:#f8fafc;--muted:#94a3b8;--panel:#1f2937;--panel-border:#374151;--bar-bg:#111827;--button-shadow:rgba(0,0,0,0.32);}
   body { width: 320px; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; padding: 14px; background:var(--bg); color:var(--text); }
   .toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; }
-  .toolbar-meta { display:flex; flex-direction:column; gap:4px; }
+  .toolbar-meta { display:flex; align-items:center; gap:10px; }
+  .toolbar-icon { width:24px; height:24px; border-radius:6px; object-fit:contain; transition: filter 0.2s ease; }
+  .toolbar-text { display:flex; flex-direction:column; gap:4px; }
   .toolbar-title { font-size:16px; font-weight:700; }
   .toolbar-link { font-size:12px; color:var(--accent); text-decoration:none; }
+  .settings-button { display:inline-flex; align-items:center; gap:6px; padding:8px 10px; font-size:12px; background:transparent; color:var(--accent); border-radius:8px; border:1px solid rgba(11,92,255,0.24); box-shadow:none; }
+  .settings-icon { width:16px; height:16px; transition: filter 0.2s ease; }
+  .dark .settings-icon {
+    filter: brightness(0) invert(1);
+  }
   .main-action { display:flex; justify-content:center; margin-top:16px; }
-  .footer { display:flex; justify-content:flex-end; margin-top:16px; }
   button { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:10px 12px; font-size:14px; cursor:pointer; border-radius:8px; border:0; background:linear-gradient(180deg,var(--accent),var(--accent-2)); color:#fff; box-shadow:0 6px 16px var(--button-shadow); transition:transform .08s ease; }
   button:active{ transform:translateY(1px) }
   button[disabled]{ opacity:0.7; cursor:default }
@@ -29,18 +35,22 @@
 <body>
   <div class="toolbar">
     <div class="toolbar-meta">
-      <div class="toolbar-title">SCZip</div>
-      <a class="toolbar-link" href="https://github.com/ruka9dx/SCZip" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <img class="toolbar-icon" src="image/icon.png" alt="SCZip" />
+      <div class="toolbar-text">
+        <div class="toolbar-title">SCZip</div>
+        <a class="toolbar-link" href="https://github.com/ruka9dx/SCZip" target="_blank" rel="noopener noreferrer">GitHub</a>
+      </div>
     </div>
+    <button id="openOptions" class="settings-button">
+      <img class="settings-icon" src="image/settings.png" alt="設定" />
+      設定
+    </button>
   </div>
   <div class="main-action">
     <button id="extractBtn">
       <span class="spinner" aria-hidden></span>
       <span class="btn-label">ジャケット+音声をZIPで保存</span>
     </button>
-  </div>
-  <div class="footer">
-    <button id="openOptions" style="background:transparent;color:#0b5cff;border:0;padding:4px 8px;font-size:12px;cursor:pointer">設定</button>
   </div>
   <div id="status"></div>
   <div id="barOuter"><div id="barInner"></div></div>

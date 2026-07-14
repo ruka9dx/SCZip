@@ -20,6 +20,13 @@ chrome.storage.sync.get({ theme: 'light' }, (data) => {
   applyPopupTheme(data.theme);
 });
 
+// show extension version in popup
+try {
+  const manifest = chrome.runtime.getManifest();
+  const popupVersionEl = document.getElementById('popupVersion');
+  if (popupVersionEl) popupVersionEl.textContent = `v${manifest.version}`;
+} catch (e) {}
+
 function setProgress(message, index, total) {
   statusEl.textContent = message;
   if (typeof index === "number" && typeof total === "number" && total > 0) {

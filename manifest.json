@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SCZip",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "SoundCloud の楽曲やプレイリストからジャケット画像と音声を ZIP で保存します",
   "permissions": ["activeTab", "contextMenus", "scripting", "webRequest", "storage", "downloads", "offscreen"],
   "host_permissions": [

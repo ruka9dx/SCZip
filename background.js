@@ -26,7 +26,11 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "extractSoundcloudZip" && tab && tab.id) {
-    chrome.tabs.sendMessage(tab.id, { action: "extractZip" }).catch(() => {});
+    chrome.tabs.sendMessage(tab.id, { action: "extractZip" }, (res) => {
+      if (chrome.runtime.lastError) {
+        console.warn("context menu sendMessage failed:", chrome.runtime.lastError.message);
+      }
+    });
   }
 });
 
@@ -58,7 +62,7 @@ async function ensureOffscreenDocument() {
   });
 }
 
-async function triggerDownload(blob, filename) {
+async function triggerDownload(blob, filename, tabId) {
   try {
     await ensureOffscreenDocument();
   } catch (e) {
@@ -67,14 +71,46 @@ async function triggerDownload(blob, filename) {
   const buffer = await blob.arrayBuffer();
   const mimeType = blob.type || "application/octet-stream";
 
-  const urlResponse = await new Promise((resolve) => {
-    chrome.runtime.sendMessage({ action: "createBlobUrl", buffer, mimeType }, (response) => {
-      if (chrome.runtime.lastError) {
-        resolve({ ok: false, message: `オフスクリーンへの送信に失敗しました: ${chrome.runtime.lastError.message}` });
-        return;
+  // send as chunks because runtime message size may be limited
+  const urlResponse = await new Promise(async (resolve) => {
+    try {
+      const CHUNK_SIZE = 512 * 1024; // 512KB
+      const uint8 = new Uint8Array(buffer);
+      const total = Math.ceil(uint8.length / CHUNK_SIZE);
+      const id = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+      console.log("background: sending buffer to offscreen in chunks", { length: uint8.length, mimeType, id, total });
+
+      for (let i = 0; i < total; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, uint8.length);
+        const part = Array.from(uint8.subarray(start, end));
+        // send chunk; await ack
+        const res = await new Promise((r) => {
+          chrome.runtime.sendMessage(
+            { action: "createBlobUrlChunk", id, index: i, numbers: part, last: i === total - 1, mimeType },
+            (response) => {
+              if (chrome.runtime.lastError) {
+                r({ ok: false, message: chrome.runtime.lastError.message });
+                return;
+              }
+              r(response || { ok: false, message: "no response" });
+            }
+          );
+        });
+        if (!res.ok) {
+          resolve({ ok: false, message: `オフスクリーン送信エラー: ${res.message}` });
+          return;
+        }
+        if (i % 10 === 0) reportProgress(tabId, `チャンク送信中...(${i+1}/${total})`, i + 1, total);
+        if (i === total - 1) {
+          // final response should contain url
+          resolve(res);
+          return;
+        }
       }
-      resolve(response || { ok: false, message: "オフスクリーンドキュメントから応答がありませんでした" });
-    });
+    } catch (e) {
+      resolve({ ok: false, message: `チャンク送信中の例外: ${e.message}` });
+    }
   });
   if (!urlResponse.ok) return urlResponse;
 
@@ -103,7 +139,7 @@ async function downloadArtworkOnly(track, tabId) {
 
   reportProgress(tabId, "保存中...", 2, total);
   const safeName = safeFileName(track.title);
-  const result = await triggerDownload(blob, `${safeName}_artwork.jpg`);
+  const result = await triggerDownload(blob, `${safeName}_artwork.jpg`, tabId);
   return result.ok ? { ok: true, message: "ジャケット画像を保存しました" } : result;
 }
 
@@ -149,13 +185,25 @@ async function downloadZip(track, tabId) {
     : "mp3";
 
   const zip = new JSZip();
-  zip.file(`${safeName}.${audioExt}`, audioBlob);
-  if (artworkBlob) zip.file(`${safeName}_artwork.jpg`, artworkBlob);
+  // Create a folder inside the zip named after the track, and put files inside it
+  const folder = zip.folder(safeName);
+  // JSZip in service worker may not handle Blob reliably; convert to Uint8Array
+  const audioData = new Uint8Array(await audioBlob.arrayBuffer());
+  folder.file(`${safeName}.${audioExt}`, audioData);
+  let artworkExt = 'jpg';
+  if (artworkBlob) {
+    const artData = new Uint8Array(await artworkBlob.arrayBuffer());
+    const mime = artworkBlob.type || '';
+    if (mime.includes('png')) artworkExt = 'png';
+    folder.file(`${safeName}_artwork.${artworkExt}`, artData);
+  }
 
-  const content = await zip.generateAsync({ type: "blob" });
+  // 生成をArrayBufferで行い、明示的にZIPのMIMEを付与してからダウンロードへ渡す
+  const arrayBuf = await zip.generateAsync({ type: "arraybuffer" });
+  const content = new Blob([new Uint8Array(arrayBuf)], { type: "application/zip" });
 
   reportProgress(tabId, "保存中...", 6, total);
-  const result = await triggerDownload(content, `${safeName}.zip`);
+  const result = await triggerDownload(content, `${safeName}.zip`, tabId);
   return result.ok ? { ok: true, message: "ZIP保存が完了しました" } : result;
 }
 
@@ -164,6 +212,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0] && tabs[0].id) {
         chrome.tabs.sendMessage(tabs[0].id, { action: "extractZip" }, (response) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({ ok: false, message: `タブへの送信に失敗しました: ${chrome.runtime.lastError.message}` });
+            return;
+          }
           sendResponse(response);
         });
       } else {

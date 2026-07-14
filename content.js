@@ -36,7 +36,17 @@ async function fetchClientId() {
 function getArtworkUrl(track) {
   let artworkUrl = track.artwork_url || (track.user && track.user.avatar_url);
   if (!artworkUrl) return null;
-  return artworkUrl.replace("-large.jpg", "-t500x500.jpg");
+  // Try to normalize to highest quality available. SoundCloud uses suffixes like
+  // -large.jpg, -t300x300.jpg, -t500x500.jpg, etc. Replace any size suffix with t500x500.
+  // Preserve extension (jpg/png).
+  const m = artworkUrl.match(/^(.*?)(-(?:large|original|t\d+x\d+|crop))?\.(jpg|png)(\?.*)?$/);
+  if (m) {
+    const base = m[1];
+    const ext = m[3] || 'jpg';
+    return `${base}-t500x500.${ext}` + (m[4] || '');
+  }
+  // fallback: append a high-res suffix
+  return artworkUrl + (artworkUrl.includes('.') ? '' : '-t500x500.jpg');
 }
 
 function ensureToast() {
@@ -45,9 +55,10 @@ function ensureToast() {
     toast = document.createElement("div");
     toast.id = "__sc_zip_toast";
     toast.style.cssText =
-      "position:fixed;bottom:24px;right:24px;background:#111;color:#fff;padding:12px 16px;border-radius:6px;font-size:13px;z-index:2147483647;max-width:320px;box-shadow:0 2px 8px rgba(0,0,0,0.3);";
+      "position:fixed;bottom:24px;right:24px;background:#111;color:#fff;padding:12px 16px;border-radius:6px;font-size:13px;z-index:2147483647;width:320px;box-sizing:border-box;box-shadow:0 2px 8px rgba(0,0,0,0.3);";
     const text = document.createElement("div");
     text.id = "__sc_zip_toast_text";
+    text.style.cssText = "white-space:normal;word-break:break-word;max-height:64px;overflow:auto;";
     const barOuter = document.createElement("div");
     barOuter.style.cssText = "margin-top:8px;height:4px;background:#444;border-radius:2px;overflow:hidden;";
     const barInner = document.createElement("div");
@@ -82,7 +93,13 @@ function showToast(message, index, total) {
 
 function sendToBackground(msg) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage(msg, (res) => resolve(res));
+    chrome.runtime.sendMessage(msg, (res) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, message: `backgroundへの送信でエラー: ${chrome.runtime.lastError.message}` });
+        return;
+      }
+      resolve(res);
+    });
   });
 }
 

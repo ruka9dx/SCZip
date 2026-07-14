@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "SCZip",
+  "version": "1.0",
+  "description": "ダウンロード許可済みのSoundCloud楽曲のジャケット画像と音声をZIPで保存します",
+  "permissions": ["activeTab", "contextMenus", "scripting", "webRequest", "storage", "downloads", "offscreen"],
+  "host_permissions": [
+    "https://soundcloud.com/*",
+    "https://api-v2.soundcloud.com/*",
+    "https://*.sndcdn.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://soundcloud.com/*"],
+      "js": ["jszip.min.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SoundCloud Zip抽出"
+  }
+}

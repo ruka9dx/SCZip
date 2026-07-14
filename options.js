@@ -48,6 +48,11 @@ async function load() {
   $('customUnit').value = data.customUnit || defaults.customUnit;
   applyTheme(data.theme || defaults.theme);
   document.getElementById('customRow').style.display = (data.chunkMode === 'custom') ? 'block' : 'none';
+  try {
+    const manifest = chrome.runtime.getManifest();
+    const verEl = document.getElementById('optionsVersion');
+    if (verEl) verEl.textContent = `Version: ${manifest.version}`;
+  } catch (e) {}
 }
 
 function showStatus(msg) {

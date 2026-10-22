@@ -338,6 +338,8 @@ async function downloadZip(track, tabId) {
 
   if (audioFetchUrl.includes('.m3u8')) {
     audioData = await fetchHlsAudio(audioFetchUrl, headers, tabId);
+    // HLS(aac/m4s)の場合は拡張子をm4aにする
+    audioExt = audioFetchUrl.includes('aac') ? 'm4a' : 'm4a'; 
   } else {
     const audioRes = await fetch(audioFetchUrl, { headers });
     if (!audioRes.ok) return { ok: false, message: `音声ファイルの取得に失敗しました (status: ${audioRes.status})` };
@@ -451,10 +453,32 @@ async function fetchHlsAudio(m3u8Url, headers, tabId) {
     lines = text.split('\n').map(l => l.trim()).filter(l => l);
   }
 
+  // ★ Initセグメント(ヘッダー情報)のURLを抽出
+  let initUrl = null;
+  const mapLine = lines.find(l => l.startsWith('#EXT-X-MAP:'));
+  if (mapLine) {
+    const match = mapLine.match(/URI="([^"]+)"/);
+    if (match) {
+      initUrl = match[1];
+      if (!initUrl.startsWith('http')) {
+        initUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1) + initUrl;
+      }
+    }
+  }
+
   const chunkUrls = lines.filter(l => !l.startsWith('#'));
   if (chunkUrls.length === 0) throw new Error('HLSプレイリストから音声URLを抽出できませんでした');
 
   const chunks = [];
+  
+  // ★ チャンク取得前に Initセグメント をダウンロードして先頭に配置
+  if (initUrl) {
+    reportProgress(tabId, `ヘッダー情報(Init)を取得中...`, 0, chunkUrls.length);
+    const initRes = await fetch(initUrl, { headers });
+    if (!initRes.ok) throw new Error(`Initデータの取得に失敗しました`);
+    chunks.push(new Uint8Array(await initRes.arrayBuffer()));
+  }
+
   for (let i = 0; i < chunkUrls.length; i++) {
     if (i % 5 === 0 || i === chunkUrls.length - 1) {
       reportProgress(tabId, `分割データを結合中... (${i + 1}/${chunkUrls.length})`, i + 1, chunkUrls.length);

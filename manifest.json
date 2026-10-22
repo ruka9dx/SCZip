@@ -5,9 +5,9 @@
   "description": "SoundCloud の楽曲やプレイリストからジャケット画像と音声を ZIP で保存します",
   "permissions": ["activeTab", "contextMenus", "scripting", "webRequest", "storage", "downloads", "offscreen"],
   "host_permissions": [
-    "https://soundcloud.com/*",
-    "https://api-v2.soundcloud.com/*",
-    "https://*.sndcdn.com/*"
+    "*://*.soundcloud.com/*",
+    "*://*.sndcdn.com/*",
+    "*://*.soundcloud.cloud/*"
   ],
   "background": {
     "service_worker": "background.js"

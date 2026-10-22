@@ -296,7 +296,6 @@ async function downloadPlaylistZip(playlist, tabId) {
 }
 
 async function downloadZip(track, tabId) {
-  // load settings
   const prefs = await new Promise((r) => chrome.storage.sync.get({ includeArtwork: true, saveAs: false, chunkMode: 'normal', artworkFormat: 'jpg' }, r));
 
   const total = 6;
@@ -332,10 +331,31 @@ async function downloadZip(track, tabId) {
   }
 
   reportProgress(tabId, "音声ファイルを取得中...", 3, total);
-  const audioRes = await fetch(audioFetchUrl, { headers });
-  if (!audioRes.ok) return { ok: false, message: `音声ファイルの取得に失敗しました (status: ${audioRes.status})` };
-  const audioBlob = await audioRes.blob();
-  const audioContentType = audioRes.headers.get('content-type') || '';
+  
+  // ★ここからHLSとプログレッシブの分岐処理
+  let audioData;
+  let audioExt = 'mp3';
+
+  if (audioFetchUrl.includes('.m3u8')) {
+    audioData = await fetchHlsAudio(audioFetchUrl, headers, tabId);
+  } else {
+    const audioRes = await fetch(audioFetchUrl, { headers });
+    if (!audioRes.ok) return { ok: false, message: `音声ファイルの取得に失敗しました (status: ${audioRes.status})` };
+    const audioBlob = await audioRes.blob();
+    const audioContentType = audioRes.headers.get('content-type') || '';
+    audioData = new Uint8Array(await audioBlob.arrayBuffer());
+
+    if (audioFetchUrl.includes('.wav') || audioContentType.includes('wav')) {
+      audioExt = 'wav';
+    } else if (audioFetchUrl.includes('.m4a') || audioContentType.includes('m4a') || audioContentType.includes('mp4')) {
+      audioExt = 'm4a';
+    } else if (audioFetchUrl.includes('.ogg') || audioContentType.includes('ogg')) {
+      audioExt = 'ogg';
+    } else if (audioContentType.includes('flac')) {
+      audioExt = 'flac';
+    }
+  }
+  // ★ここまで追加・修正部分
 
   reportProgress(tabId, "ジャケット画像を取得中...", 4, total);
   let artworkBlob = null;
@@ -351,23 +371,13 @@ async function downloadZip(track, tabId) {
 
   reportProgress(tabId, "ZIPを作成中...", 5, total);
   const safeName = safeFileName(track.title);
-  let audioExt = 'mp3';
-  if (audioFetchUrl.includes('.wav') || audioContentType.includes('wav')) {
-    audioExt = 'wav';
-  } else if (audioFetchUrl.includes('.m4a') || audioContentType.includes('m4a') || audioContentType.includes('mp4')) {
-    audioExt = 'm4a';
-  } else if (audioFetchUrl.includes('.ogg') || audioContentType.includes('ogg')) {
-    audioExt = 'ogg';
-  } else if (audioContentType.includes('flac')) {
-    audioExt = 'flac';
-  }
 
   const zip = new JSZip();
-  // Create a folder inside the zip named after the track, and put files inside it
   const folder = zip.folder(safeName);
-  // JSZip in service worker may not handle Blob reliably; convert to Uint8Array
-  const audioData = new Uint8Array(await audioBlob.arrayBuffer());
+  
+  // 取得した音声データをZIPにセット
   folder.file(`${safeName}.${audioExt}`, audioData);
+  
   let artworkExt = 'jpg';
   if (artworkBlob) {
     const artData = new Uint8Array(await artworkBlob.arrayBuffer());
@@ -376,11 +386,9 @@ async function downloadZip(track, tabId) {
     folder.file(`${safeName}_artwork.${artworkExt}`, artData);
   }
 
-  // 生成をArrayBufferで行い、明示的にZIPのMIMEを付与してからダウンロードへ渡す
   const arrayBuf = await zip.generateAsync({ type: "arraybuffer" });
   const content = new Blob([new Uint8Array(arrayBuf)], { type: "application/zip" });
 
-  // determine final file name (use safeName)
   const finalFileName = `${safeFileName(safeName)}.zip`;
 
   reportProgress(tabId, "保存中...", 6, total);
@@ -427,3 +435,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 });
+
+async function fetchHlsAudio(m3u8Url, headers, tabId) {
+  let res = await fetch(m3u8Url, { headers });
+  let text = await res.text();
+
+  let lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  if (lines.some(l => l.endsWith('.m3u8'))) {
+    let subUrl = lines.find(l => !l.startsWith('#'));
+    if (!subUrl.startsWith('http')) {
+      subUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1) + subUrl;
+    }
+    res = await fetch(subUrl, { headers });
+    text = await res.text();
+    lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  }
+
+  const chunkUrls = lines.filter(l => !l.startsWith('#'));
+  if (chunkUrls.length === 0) throw new Error('HLSプレイリストから音声URLを抽出できませんでした');
+
+  const chunks = [];
+  for (let i = 0; i < chunkUrls.length; i++) {
+    if (i % 5 === 0 || i === chunkUrls.length - 1) {
+      reportProgress(tabId, `分割データを結合中... (${i + 1}/${chunkUrls.length})`, i + 1, chunkUrls.length);
+    }
+    let chunkUrl = chunkUrls[i];
+    if (!chunkUrl.startsWith('http')) {
+      chunkUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1) + chunkUrl;
+    }
+    const chunkRes = await fetch(chunkUrl, { headers });
+    if (!chunkRes.ok) throw new Error(`チャンクの取得に失敗しました (status: ${chunkRes.status})`);
+    chunks.push(new Uint8Array(await chunkRes.arrayBuffer()));
+  }
+
+  const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+  const audioData = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const c of chunks) {
+    audioData.set(c, offset);
+    offset += c.length;
+  }
+  return audioData;
+}

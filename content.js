@@ -49,12 +49,22 @@ function getArtworkUrl(track) {
   return artworkUrl + (artworkUrl.includes('.') ? '' : '-t500x500.jpg');
 }
 
-function findProgressiveTranscoding(track) {
+function findDownloadableTranscoding(track) {
   const transcodings = track.media?.transcodings || [];
-  return transcodings.find((item) => {
+  // 1. まず単一ファイルで取得できる progressive を探す
+  let target = transcodings.find((item) => {
     const format = item.format || {};
     return format.protocol === 'progressive' && typeof format.mime_type === 'string' && format.mime_type.startsWith('audio/');
   });
+  
+  // 2. なければ、分割配信の hls を探す
+  if (!target) {
+    target = transcodings.find((item) => {
+      const format = item.format || {};
+      return format.protocol === 'hls' && typeof format.mime_type === 'string' && format.mime_type.startsWith('audio/');
+    });
+  }
+  return target;
 }
 
 function buildStreamRequestUrl(transcoding, clientId) {
@@ -164,7 +174,7 @@ async function extractAndZip() {
     for (let index = 0; index < tracks.length; index++) {
       const track = await fetchFullTrack(tracks[index], clientId);
       const artworkUrl = getArtworkUrl(track);
-      const progressive = findProgressiveTranscoding(track);
+      const progressive = findDownloadableTranscoding(track);
       entries.push({
         id: track.id,
         title: track.title || `track-${index + 1}`,
@@ -195,7 +205,7 @@ async function extractAndZip() {
   const artworkUrl = getArtworkUrl(track);
 
   if (!track.downloadable) {
-    const progressive = findProgressiveTranscoding(track);
+    const progressive = findDownloadableTranscoding(track);
     if (progressive) {
       const proceed = window.confirm(
         "この曲はダウンロードが許可されていません。ストリーミング音声を取得してZIPにしますか?"

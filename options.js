@@ -5,7 +5,10 @@ const defaults = {
   chunkMode: 'normal',
   customSize: 512,
   customUnit: 'KB',
-  theme: 'light'
+  theme: 'light',
+  // ★新しく追加した項目のデフォルト値
+  downloadMode: 'zip',
+  saveDirectory: ''
 };
 
 let systemThemeQuery = null;
@@ -16,8 +19,7 @@ function applyTheme(theme) {
     const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     document.body.classList.toggle('dark', isDark);
     $('themeSystem').classList.add('active');
-    $('themeLight').classList.remove('active');
-    $('themeDark').classList.remove('active');
+    $('themeLight').classList.remove('active');$('themeDark').classList.remove('active');
     if (!systemThemeQuery) {
       systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
       systemThemeQuery.addEventListener('change', onSystemThemeChange);
@@ -25,8 +27,7 @@ function applyTheme(theme) {
   } else {
     document.body.classList.toggle('dark', theme === 'dark');
     $('themeLight').classList.toggle('active', theme === 'light');
-    $('themeDark').classList.toggle('active', theme === 'dark');
-    $('themeSystem').classList.remove('active');
+    $('themeDark').classList.toggle('active', theme === 'dark');$('themeSystem').classList.remove('active');
     if (systemThemeQuery) {
       systemThemeQuery.removeEventListener('change', onSystemThemeChange);
       systemThemeQuery = null;
@@ -46,6 +47,11 @@ async function load() {
   $('chunkMode').value = data.chunkMode || defaults.chunkMode;
   $('customSize').value = data.customSize || defaults.customSize;
   $('customUnit').value = data.customUnit || defaults.customUnit;
+  
+  // ★新しく追加した項目の読み込み処理
+  if ($('downloadMode'))$('downloadMode').value = data.downloadMode || defaults.downloadMode;
+  if ($('saveDirectory'))$('saveDirectory').value = data.saveDirectory || defaults.saveDirectory;
+
   applyTheme(data.theme || defaults.theme);
   document.getElementById('customRow').style.display = (data.chunkMode === 'custom') ? 'block' : 'none';
   try {
@@ -61,7 +67,12 @@ function showStatus(msg) {
 }
 
 async function save() {
-  const selectedTheme = $('themeDark').classList.contains('active') ? 'dark' : $('themeSystem').classList.contains('active') ? 'system' : 'light';
+  const selectedTheme = $('themeDark').classList.contains('active') ? 'dark' :$('themeSystem').classList.contains('active') ? 'system' : 'light';
+  
+  // ★保存先フォルダのパスの前後に付いた不要なスラッシュを取り除く処理
+  let dir = $('saveDirectory') ?$('saveDirectory').value.trim() : '';
+  dir = dir.replace(/^\/+|\/+$/g, '');
+
   const obj = {
     includeArtwork: $('includeArtwork').checked,
     artworkFormat: $('artworkFormat').value || defaults.artworkFormat,
@@ -69,7 +80,10 @@ async function save() {
     chunkMode: $('chunkMode').value || defaults.chunkMode,
     customSize: Number($('customSize').value) || defaults.customSize,
     customUnit: $('customUnit').value || defaults.customUnit,
-    theme: selectedTheme
+    theme: selectedTheme,
+    // ★新しく追加した項目の保存処理
+    downloadMode: $('downloadMode') ?$('downloadMode').value : defaults.downloadMode,
+    saveDirectory: dir
   };
   await new Promise((r) => chrome.storage.sync.set(obj, r));
   showStatus('設定を保存しました');

@@ -72,8 +72,10 @@
     font-size: 13px;
     color: var(--muted);
   }
+  /* 入力枠のデザインを維持するための追加 */
   select,
-  input[type=number] {
+  input[type=number],
+  input[type=text] {
     width: 100%;
     padding: 10px 12px;
     border-radius: 10px;
@@ -83,7 +85,8 @@
     transition: border-color 0.2s ease, background 0.2s ease;
   }
   select:focus,
-  input[type=number]:focus {
+  input[type=number]:focus,
+  input[type=text]:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 4px var(--accent-subtle);
@@ -153,6 +156,23 @@
         </label>
       </div>
     </div>
+
+    <!-- 追加：ダウンロードモード -->
+    <div class="section">
+      <label for="downloadMode">ダウンロードモード</label>
+      <select id="downloadMode">
+        <option value="zip">今まで通り (音声＋画像をZIP化)</option>
+        <option value="audioOnly">音声ファイルのみ (.m4a/.mp3等)</option>
+      </select>
+    </div>
+
+    <!-- 追加：保存先フォルダ -->
+    <div class="section">
+      <label for="saveDirectory">保存先フォルダ (ダウンロードフォルダ内の相対パス)</label>
+      <input id="saveDirectory" type="text" placeholder="例: SoundCloud/Tracks" />
+      <div class="note">※空欄の場合は直接ダウンロードフォルダに保存されます。OSの制限により、ダウンロードフォルダ以外の場所は指定できません。</div>
+    </div>
+
     <div class="section">
       <label for="includeArtwork">ジャケット画像をZIPに含める</label>
       <div class="row"><div><input id="includeArtwork" type="checkbox" /> 同梱する</div></div>

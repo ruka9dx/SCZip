@@ -6,9 +6,9 @@ const defaults = {
   customSize: 512,
   customUnit: 'KB',
   theme: 'light',
-  // ★新しく追加した項目のデフォルト値
   downloadMode: 'zip',
-  saveDirectory: ''
+  saveDirectory: '',
+  showConfirmDialog: true // ★追加
 };
 
 let systemThemeQuery = null;
@@ -48,9 +48,10 @@ async function load() {
   $('customSize').value = data.customSize || defaults.customSize;
   $('customUnit').value = data.customUnit || defaults.customUnit;
   
-  // ★新しく追加した項目の読み込み処理
   if ($('downloadMode'))$('downloadMode').value = data.downloadMode || defaults.downloadMode;
   if ($('saveDirectory'))$('saveDirectory').value = data.saveDirectory || defaults.saveDirectory;
+  // ★追加：設定画面に読み込み
+  if ($('showConfirmDialog'))$('showConfirmDialog').checked = data.showConfirmDialog !== false;
 
   applyTheme(data.theme || defaults.theme);
   document.getElementById('customRow').style.display = (data.chunkMode === 'custom') ? 'block' : 'none';
@@ -69,7 +70,6 @@ function showStatus(msg) {
 async function save() {
   const selectedTheme = $('themeDark').classList.contains('active') ? 'dark' :$('themeSystem').classList.contains('active') ? 'system' : 'light';
   
-  // ★保存先フォルダのパスの前後に付いた不要なスラッシュを取り除く処理
   let dir = $('saveDirectory') ?$('saveDirectory').value.trim() : '';
   dir = dir.replace(/^\/+|\/+$/g, '');
 
@@ -81,9 +81,10 @@ async function save() {
     customSize: Number($('customSize').value) || defaults.customSize,
     customUnit: $('customUnit').value || defaults.customUnit,
     theme: selectedTheme,
-    // ★新しく追加した項目の保存処理
     downloadMode: $('downloadMode') ?$('downloadMode').value : defaults.downloadMode,
-    saveDirectory: dir
+    saveDirectory: dir,
+    // ★追加：設定を保存
+    showConfirmDialog: $('showConfirmDialog') ?$('showConfirmDialog').checked : defaults.showConfirmDialog
   };
   await new Promise((r) => chrome.storage.sync.set(obj, r));
   showStatus('設定を保存しました');

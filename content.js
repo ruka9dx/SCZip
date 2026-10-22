@@ -36,28 +36,22 @@ async function fetchClientId() {
 function getArtworkUrl(track) {
   let artworkUrl = track.artwork_url || (track.user && track.user.avatar_url);
   if (!artworkUrl) return null;
-  // Try to normalize to highest quality available. SoundCloud uses suffixes like
-  // -large.jpg, -t300x300.jpg, -t500x500.jpg, etc. Replace any size suffix with t500x500.
-  // Preserve extension (jpg/png).
   const m = artworkUrl.match(/^(.*?)(-(?:large|original|t\d+x\d+|crop))?\.(jpg|png)(\?.*)?$/);
   if (m) {
     const base = m[1];
     const ext = m[3] || 'jpg';
     return `${base}-t500x500.${ext}` + (m[4] || '');
   }
-  // fallback: append a high-res suffix
   return artworkUrl + (artworkUrl.includes('.') ? '' : '-t500x500.jpg');
 }
 
 function findDownloadableTranscoding(track) {
   const transcodings = track.media?.transcodings || [];
-  // 1. まず単一ファイルで取得できる progressive を探す
   let target = transcodings.find((item) => {
     const format = item.format || {};
     return format.protocol === 'progressive' && typeof format.mime_type === 'string' && format.mime_type.startsWith('audio/');
   });
   
-  // 2. なければ、分割配信の hls を探す
   if (!target) {
     target = transcodings.find((item) => {
       const format = item.format || {};
@@ -128,7 +122,6 @@ function ensureToast() {
 }
 
 let toastHideTimer = null;
-
 function showToast(message, index, total) {
   const toast = ensureToast();
   const text = document.getElementById("__sc_zip_toast_text");
@@ -163,6 +156,10 @@ async function extractAndZip() {
   const clientId = await fetchClientId();
   if (!clientId) throw new Error("client_idが取得できませんでした");
 
+  // ★ 設定から showConfirmDialog も一緒に読み込む
+  const prefs = await new Promise((r) => chrome.storage.sync.get({ downloadMode: 'zip', showConfirmDialog: true }, r));
+  const actionText = prefs.downloadMode === 'audioOnly' ? '保存' : 'ZIPに';
+
   let data = await resolveCurrentTrack(clientId);
   if (data.kind === 'playlist') {
     data = await fetchFullPlaylist(data, clientId);
@@ -189,9 +186,14 @@ async function extractAndZip() {
 
     const skipped = entries.length - available.length;
     const promptMessage = skipped > 0
-      ? `プレイリスト「${playlistTitle}」の ${available.length} 曲をまとめて ZIP にします。取得不可の曲 ${skipped} 曲は除外されます。時間がかかる場合があります。実行しますか?`
-      : `プレイリスト「${playlistTitle}」の ${available.length} 曲をまとめて ZIP にします。時間がかかる場合があります。実行しますか?`;
-    const proceed = window.confirm(promptMessage);
+      ? `プレイリスト「${playlistTitle}」の ${available.length} 曲をまとめて ${actionText} します。取得不可の曲 ${skipped} 曲は除外されます。時間がかかる場合があります。実行しますか?`
+      : `プレイリスト「${playlistTitle}」の ${available.length} 曲をまとめて ${actionText} します。時間がかかる場合があります。実行しますか?`;
+    
+    // ★ 設定がオフの場合は確認ダイアログを出さずに進む
+    let proceed = true;
+    if (prefs.showConfirmDialog) {
+      proceed = window.confirm(promptMessage);
+    }
     if (!proceed) return { ok: true, message: "キャンセルしました" };
 
     const result = await sendToBackground({
@@ -207,14 +209,21 @@ async function extractAndZip() {
   if (!track.downloadable) {
     const progressive = findDownloadableTranscoding(track);
     if (progressive) {
-      const proceed = window.confirm(
-        "この曲はダウンロードが許可されていません。ストリーミング音声を取得してZIPにしますか?"
-      );
+      // ★ 設定がオフの場合は確認ダイアログを出さずに進む
+      let proceed = true;
+      if (prefs.showConfirmDialog) {
+        proceed = window.confirm(
+          `この曲はダウンロードが許可されていません。ストリーミング音声を取得して${actionText}しますか?`
+        );
+      }
       if (!proceed) return { ok: true, message: "キャンセルしました" };
+
       const result = await sendToBackground({
         action: "downloadZip",
         track: {
+          id: track.id,
           title: track.title,
+          clientId,
           artworkUrl,
           streamUrl: buildStreamRequestUrl(progressive, clientId)
         }
@@ -222,10 +231,14 @@ async function extractAndZip() {
       return result || { ok: false, message: "応答がありませんでした" };
     }
 
-    const proceed = window.confirm(
-      "この曲はダウンロードが許可されていません。ジャケット画像だけダウンロードしますか?"
-    );
+    let proceed = true;
+    if (prefs.showConfirmDialog) {
+      proceed = window.confirm(
+        "この曲はダウンロードが許可されていません。ジャケット画像だけダウンロードしますか?"
+      );
+    }
     if (!proceed) return { ok: true, message: "キャンセルしました" };
+
     const result = await sendToBackground({
       action: "downloadArtworkOnly",
       track: { title: track.title, artworkUrl }

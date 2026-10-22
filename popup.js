@@ -2,7 +2,9 @@ const statusEl = document.getElementById("status");
 const barOuter = document.getElementById("barOuter");
 const barInner = document.getElementById("barInner");
 const extractBtn = document.getElementById("extractBtn");
+const btnLabel = document.getElementById("btnLabel");
 const spinner = extractBtn && extractBtn.querySelector('.spinner');
+const popupMode = document.getElementById("popupMode"); // 追加
 
 function applyPopupTheme(theme) {
   if (theme === 'system') {
@@ -16,9 +18,32 @@ function applyPopupTheme(theme) {
   }
 }
 
-chrome.storage.sync.get({ theme: 'light' }, (data) => {
+// 起動時に保存されている設定を読み込む
+chrome.storage.sync.get({ theme: 'light', downloadMode: 'zip' }, (data) => {
   applyPopupTheme(data.theme);
+  
+  if (popupMode) {
+    popupMode.value = data.downloadMode;
+    updateButtonLabel(data.downloadMode);
+  }
 });
+
+// ポップアップ上でモードが変更されたら保存してボタン名を更新
+if (popupMode) {
+  popupMode.addEventListener("change", (e) => {
+    const newMode = e.target.value;
+    chrome.storage.sync.set({ downloadMode: newMode });
+    updateButtonLabel(newMode);
+  });
+}
+
+function updateButtonLabel(mode) {
+  if (mode === 'audioOnly') {
+    btnLabel.textContent = "音声のみ保存";
+  } else {
+    btnLabel.textContent = "ジャケット+音声をZIPで保存";
+  }
+}
 
 // show extension version in popup
 try {
@@ -72,7 +97,6 @@ document.getElementById("extractBtn").addEventListener("click", () => {
         }
         if (response) {
           if (response.ok) {
-            // complete the bar and show complete state briefly
             setProgress(response.message || "完了", 1, 1);
             setTimeout(() => {
               if (extractBtn) { extractBtn.disabled = false; extractBtn.classList.remove('loading'); }

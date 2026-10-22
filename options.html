@@ -72,7 +72,6 @@
     font-size: 13px;
     color: var(--muted);
   }
-  /* 入力枠のデザインを維持するための追加 */
   select,
   input[type=number],
   input[type=text] {
@@ -157,7 +156,6 @@
       </div>
     </div>
 
-    <!-- 追加：ダウンロードモード -->
     <div class="section">
       <label for="downloadMode">ダウンロードモード</label>
       <select id="downloadMode">
@@ -166,7 +164,6 @@
       </select>
     </div>
 
-    <!-- 追加：保存先フォルダ -->
     <div class="section">
       <label for="saveDirectory">保存先フォルダ (ダウンロードフォルダ内の相対パス)</label>
       <input id="saveDirectory" type="text" placeholder="例: SoundCloud/Tracks" />
@@ -214,6 +211,13 @@
     <div class="section">
       <label for="saveAs">保存前に「名前を付けて保存」を表示</label>
       <div class="row"><div><input id="saveAs" type="checkbox" /> 保存時にダイアログを出す</div></div>
+    </div>
+
+    <!-- ★追加：確認ダイアログの表示設定 -->
+    <div class="section">
+      <label for="showConfirmDialog">ストリーミング保存時の確認ダイアログ</label>
+      <div class="row"><div><input id="showConfirmDialog" type="checkbox" /> 確認メッセージを表示する</div></div>
+      <div class="note">チェックを外すと、ダウンロード許可がない曲でもダイアログを出さずに自動でストリーミング保存を開始します。</div>
     </div>
 
     <div class="actions">

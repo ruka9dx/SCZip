@@ -18,7 +18,7 @@ chrome.webRequest.onSendHeaders.addListener(
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "extractSoundcloudZip",
-    title: "ジャケット+音声をZIPで保存",
+    title: "SCZipでダウンロード",
     contexts: ["page", "audio"],
     documentUrlPatterns: ["https://soundcloud.com/*"]
   });
@@ -71,11 +71,9 @@ async function triggerDownload(blob, filename, tabId, saveAs = false) {
   const buffer = await blob.arrayBuffer();
   const mimeType = blob.type || "application/octet-stream";
 
-  // send as chunks because runtime message size may be limited
   const urlResponse = await new Promise(async (resolve) => {
     try {
-      // Determine chunk size from prefs (safe/normal/fast)
-      let CHUNK_SIZE = 512 * 1024; // default 512KB
+      let CHUNK_SIZE = 512 * 1024;
       try {
         const stored = await new Promise((r) => chrome.storage.sync.get({ chunkMode: 'normal', customSize: 512, customUnit: 'KB' }, r));
         if (stored.chunkMode === 'safe') CHUNK_SIZE = 128 * 1024;
@@ -84,18 +82,16 @@ async function triggerDownload(blob, filename, tabId, saveAs = false) {
           const n = Number(stored.customSize) || 512;
           const unit = (stored.customUnit || 'KB').toUpperCase();
           CHUNK_SIZE = unit === 'MB' ? n * 1024 * 1024 : n * 1024;
-        } else CHUNK_SIZE = 512 * 1024;
+        }
       } catch (e) {}
       const uint8 = new Uint8Array(buffer);
       const total = Math.ceil(uint8.length / CHUNK_SIZE);
       const id = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
-      console.log("background: sending buffer to offscreen in chunks", { length: uint8.length, mimeType, id, total });
 
       for (let i = 0; i < total; i++) {
         const start = i * CHUNK_SIZE;
         const end = Math.min(start + CHUNK_SIZE, uint8.length);
         const part = Array.from(uint8.subarray(start, end));
-        // send chunk; await ack
         const res = await new Promise((r) => {
           chrome.runtime.sendMessage(
             { action: "createBlobUrlChunk", id, index: i, numbers: part, last: i === total - 1, mimeType },
@@ -114,7 +110,6 @@ async function triggerDownload(blob, filename, tabId, saveAs = false) {
         }
         if (i % 10 === 0) reportProgress(tabId, `チャンク送信中...(${i+1}/${total})`, i + 1, total);
         if (i === total - 1) {
-          // final response should contain url
           resolve(res);
           return;
         }
@@ -128,10 +123,7 @@ async function triggerDownload(blob, filename, tabId, saveAs = false) {
   return new Promise((resolve) => {
     chrome.downloads.download({ url: urlResponse.url, filename, saveAs: !!saveAs }, (downloadId) => {
       if (chrome.runtime.lastError || !downloadId) {
-        resolve({
-          ok: false,
-          message: `保存に失敗しました: ${chrome.runtime.lastError ? chrome.runtime.lastError.message : "unknown"}`
-        });
+        resolve({ ok: false, message: `保存に失敗しました` });
       } else {
         resolve({ ok: true });
       }
@@ -140,50 +132,41 @@ async function triggerDownload(blob, filename, tabId, saveAs = false) {
 }
 
 async function convertArtworkBlob(blob, format) {
-  if (!format || format === 'jpg') {
-    return blob;
-  }
-  if (!self.createImageBitmap || typeof OffscreenCanvas === 'undefined') {
-    return blob;
-  }
+  if (!format || format === 'jpg') return blob;
+  if (!self.createImageBitmap || typeof OffscreenCanvas === 'undefined') return blob;
   try {
     const bitmap = await createImageBitmap(blob);
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
     const ctx = canvas.getContext('2d');
     ctx.drawImage(bitmap, 0, 0);
-    const converted = await canvas.convertToBlob({ type: 'image/png' });
-    return converted;
+    return await canvas.convertToBlob({ type: 'image/png' });
   } catch (e) {
     return blob;
   }
 }
 
 async function downloadArtworkOnly(track, tabId) {
-  // respect user prefs for saveAs
-  const prefs = await new Promise((r) => chrome.storage.sync.get({ saveAs: false, artworkFormat: 'jpg' }, r));
+  const prefs = await new Promise((r) => chrome.storage.sync.get({ saveAs: false, artworkFormat: 'jpg', saveDirectory: '' }, r));
   const total = 2;
   reportProgress(tabId, "画像を取得中...", 1, total);
-  const artworkUrl = track.artworkUrl;
-  if (!artworkUrl) return { ok: false, message: "ジャケット画像が見つかりませんでした" };
-  const res = await fetch(artworkUrl);
-  if (!res.ok) return { ok: false, message: `画像の取得に失敗しました (status: ${res.status})` };
+  if (!track.artworkUrl) return { ok: false, message: "ジャケット画像が見つかりませんでした" };
+  const res = await fetch(track.artworkUrl);
+  if (!res.ok) return { ok: false, message: `画像の取得に失敗しました` };
   let blob = await res.blob();
-  if (prefs.artworkFormat === 'png') {
-    blob = await convertArtworkBlob(blob, 'png');
-  }
+  if (prefs.artworkFormat === 'png') blob = await convertArtworkBlob(blob, 'png');
 
   reportProgress(tabId, "保存中...", 2, total);
   const safeName = safeFileName(track.title);
   const extension = prefs.artworkFormat === 'png' ? 'png' : 'jpg';
-  const result = await triggerDownload(blob, `${safeName}_artwork.${extension}`, tabId, !!prefs.saveAs);
+  const folderPrefix = prefs.saveDirectory ? `${prefs.saveDirectory}/` : "";
+  
+  const result = await triggerDownload(blob, `${folderPrefix}${safeName}_artwork.${extension}`, tabId, !!prefs.saveAs);
   return result.ok ? { ok: true, message: "ジャケット画像を保存しました" } : result;
 }
 
 async function resolveStreamAudioUrl(streamUrl) {
   const res = await fetch(streamUrl);
-  if (!res.ok) {
-    throw new Error(`ストリーミング情報の取得に失敗しました (status: ${res.status})`);
-  }
+  if (!res.ok) throw new Error(`ストリーミング情報の取得に失敗しました`);
   const contentType = res.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     const data = await res.json();
@@ -196,19 +179,75 @@ async function resolveStreamAudioUrl(streamUrl) {
 async function getDownloadRedirectUri(trackId, clientId, headers) {
   const downloadUrl = `https://api-v2.soundcloud.com/tracks/${trackId}/download?client_id=${encodeURIComponent(clientId)}`;
   const res = await fetch(downloadUrl, { headers });
-  if (!res.ok) {
-    const bodyText = await res.text().catch(() => "");
-    throw new Error(`ダウンロードリンクの取得に失敗しました (status: ${res.status}, body: ${bodyText.slice(0, 200)})`);
-  }
+  if (!res.ok) throw new Error(`ダウンロードリンクの取得に失敗しました`);
   const data = await res.json();
-  if (!data.redirectUri) {
-    throw new Error(`redirectUriが応答に含まれていません: ${JSON.stringify(data).slice(0, 200)}`);
-  }
+  if (!data.redirectUri) throw new Error(`redirectUriが含まれていません`);
   return data.redirectUri;
 }
 
+async function fetchHlsAudio(m3u8Url, headers, tabId) {
+  let res = await fetch(m3u8Url, { headers });
+  let text = await res.text();
+
+  let lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  if (lines.some(l => l.endsWith('.m3u8'))) {
+    let subUrl = lines.find(l => !l.startsWith('#'));
+    if (!subUrl.startsWith('http')) {
+      subUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1) + subUrl;
+    }
+    res = await fetch(subUrl, { headers });
+    text = await res.text();
+    lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  }
+
+  let initUrl = null;
+  const mapLine = lines.find(l => l.startsWith('#EXT-X-MAP:'));
+  if (mapLine) {
+    const match = mapLine.match(/URI="([^"]+)"/);
+    if (match) {
+      initUrl = match[1];
+      if (!initUrl.startsWith('http')) {
+        initUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1) + initUrl;
+      }
+    }
+  }
+
+  const chunkUrls = lines.filter(l => !l.startsWith('#'));
+  if (chunkUrls.length === 0) throw new Error('HLSプレイリストから音声URLを抽出できませんでした');
+
+  const chunks = [];
+  if (initUrl) {
+    reportProgress(tabId, `ヘッダー情報を取得中...`, 0, chunkUrls.length);
+    const initRes = await fetch(initUrl, { headers });
+    if (!initRes.ok) throw new Error(`Initデータの取得に失敗しました`);
+    chunks.push(new Uint8Array(await initRes.arrayBuffer()));
+  }
+
+  for (let i = 0; i < chunkUrls.length; i++) {
+    if (i % 5 === 0 || i === chunkUrls.length - 1) {
+      reportProgress(tabId, `分割データを結合中... (${i + 1}/${chunkUrls.length})`, i + 1, chunkUrls.length);
+    }
+    let chunkUrl = chunkUrls[i];
+    if (!chunkUrl.startsWith('http')) {
+      chunkUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1) + chunkUrl;
+    }
+    const chunkRes = await fetch(chunkUrl, { headers });
+    if (!chunkRes.ok) throw new Error(`チャンクの取得に失敗しました`);
+    chunks.push(new Uint8Array(await chunkRes.arrayBuffer()));
+  }
+
+  const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+  const audioData = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const c of chunks) {
+    audioData.set(c, offset);
+    offset += c.length;
+  }
+  return audioData;
+}
+
 async function downloadPlaylistZip(playlist, tabId) {
-  const prefs = await new Promise((r) => chrome.storage.sync.get({ includeArtwork: true, saveAs: false, chunkMode: 'normal', artworkFormat: 'jpg' }, r));
+  const prefs = await new Promise((r) => chrome.storage.sync.get({ includeArtwork: true, saveAs: false, chunkMode: 'normal', artworkFormat: 'jpg', saveDirectory: '' }, r));
   const tracks = Array.isArray(playlist.tracks) ? playlist.tracks : [];
   if (tracks.length === 0) return { ok: false, message: "プレイリストにダウンロード可能な曲がありませんでした" };
 
@@ -227,47 +266,43 @@ async function downloadPlaylistZip(playlist, tabId) {
     reportProgress(tabId, `トラック ${i + 1}/${totalTracks} を処理中...`, i + 1, totalTracks);
     try {
       let audioFetchUrl;
-      if (track.streamUrl) {
-        audioFetchUrl = await resolveStreamAudioUrl(track.streamUrl);
-      } else {
-        audioFetchUrl = await getDownloadRedirectUri(track.id, track.clientId, headers);
-      }
+      if (track.streamUrl) audioFetchUrl = await resolveStreamAudioUrl(track.streamUrl);
+      else audioFetchUrl = await getDownloadRedirectUri(track.id, track.clientId, headers);
 
-      const audioRes = await fetch(audioFetchUrl, { headers });
-      if (!audioRes.ok) throw new Error(`音声ファイルの取得に失敗しました (status: ${audioRes.status})`);
-      const audioBlob = await audioRes.blob();
-      const audioContentType = audioRes.headers.get('content-type') || '';
+      let audioData, audioExt;
+      if (audioFetchUrl.includes('.m3u8')) {
+        audioData = await fetchHlsAudio(audioFetchUrl, headers, tabId);
+        audioExt = 'm4a';
+      } else {
+        const audioRes = await fetch(audioFetchUrl, { headers });
+        if (!audioRes.ok) throw new Error(`音声ファイルの取得に失敗しました`);
+        const audioBlob = await audioRes.blob();
+        const audioContentType = audioRes.headers.get('content-type') || '';
+        audioData = new Uint8Array(await audioBlob.arrayBuffer());
+        if (audioFetchUrl.includes('.wav') || audioContentType.includes('wav')) audioExt = 'wav';
+        else if (audioFetchUrl.includes('.m4a') || audioContentType.includes('m4a') || audioContentType.includes('mp4')) audioExt = 'm4a';
+        else if (audioFetchUrl.includes('.ogg') || audioContentType.includes('ogg')) audioExt = 'ogg';
+        else if (audioContentType.includes('flac')) audioExt = 'flac';
+        else audioExt = 'mp3';
+      }
 
       let artworkBlob = null;
       if (prefs.includeArtwork && track.artworkUrl) {
         const artworkRes = await fetch(track.artworkUrl);
         if (artworkRes.ok) {
           artworkBlob = await artworkRes.blob();
-          if (prefs.artworkFormat === 'png') {
-            artworkBlob = await convertArtworkBlob(artworkBlob, 'png');
-          }
+          if (prefs.artworkFormat === 'png') artworkBlob = await convertArtworkBlob(artworkBlob, 'png');
         }
       }
 
       const trackSafe = safeFileName(track.title || `track-${i + 1}`);
       const trackFolderName = `${String(i + 1).padStart(2, '0')}. ${trackSafe}`;
       const trackFolder = folder.folder(trackFolderName);
-      const audioExt = audioFetchUrl.includes('.wav') || audioContentType.includes('wav')
-        ? 'wav'
-        : audioFetchUrl.includes('.m4a') || audioContentType.includes('m4a') || audioContentType.includes('mp4')
-        ? 'm4a'
-        : audioFetchUrl.includes('.ogg') || audioContentType.includes('ogg')
-        ? 'ogg'
-        : audioContentType.includes('flac')
-        ? 'flac'
-        : 'mp3';
-      const audioData = new Uint8Array(await audioBlob.arrayBuffer());
       trackFolder.file(`${trackSafe}.${audioExt}`, audioData);
 
       if (artworkBlob) {
         const artData = new Uint8Array(await artworkBlob.arrayBuffer());
-        const artMime = artworkBlob.type || '';
-        const artworkExt = artMime.includes('png') ? 'png' : 'jpg';
+        const artworkExt = (artworkBlob.type || '').includes('png') ? 'png' : 'jpg';
         trackFolder.file(`${trackSafe}_artwork.${artworkExt}`, artData);
       }
     } catch (e) {
@@ -275,36 +310,36 @@ async function downloadPlaylistZip(playlist, tabId) {
     }
   }
 
-  if (zip._update) {} // noop to retain zip usage
-  if (failed.length === totalTracks) {
-    return { ok: false, message: 'プレイリスト内の全トラックの取得に失敗しました' };
-  }
-
-  if (failed.length > 0) {
-    const errorText = failed.map((item) => `${item.title}: ${item.reason}`).join('\n');
-    folder.file('failed_tracks.txt', errorText);
-  }
-
+  if (failed.length === totalTracks) return { ok: false, message: '全トラックの取得に失敗しました' };
+  
   reportProgress(tabId, 'ZIPを生成中...', totalTracks, totalTracks);
   const arrayBuf = await zip.generateAsync({ type: 'arraybuffer' });
   const content = new Blob([new Uint8Array(arrayBuf)], { type: 'application/zip' });
-  const finalFileName = `${playlistName}.zip`;
+  
+  const folderPrefix = prefs.saveDirectory ? `${prefs.saveDirectory}/` : "";
+  const finalFileName = `${folderPrefix}${playlistName}.zip`;
 
   reportProgress(tabId, '保存中...', totalTracks, totalTracks);
   const result = await triggerDownload(content, finalFileName, tabId, !!prefs.saveAs);
-  return result.ok ? { ok: true, message: `プレイリストZIP保存が完了しました${failed.length > 0 ? '（一部失敗トラックあり）' : ''}` } : result;
+  return result.ok ? { ok: true, message: `完了${failed.length > 0 ? '（一部失敗）' : ''}` } : result;
 }
 
 async function downloadZip(track, tabId) {
-  const prefs = await new Promise((r) => chrome.storage.sync.get({ includeArtwork: true, saveAs: false, chunkMode: 'normal', artworkFormat: 'jpg' }, r));
+  const prefs = await new Promise((r) => chrome.storage.sync.get({ 
+    includeArtwork: true, 
+    saveAs: false, 
+    chunkMode: 'normal', 
+    artworkFormat: 'jpg',
+    downloadMode: 'zip',
+    saveDirectory: ''
+  }, r));
 
-  const total = 6;
+  const total = prefs.downloadMode === 'audioOnly' ? 4 : 6;
   reportProgress(tabId, "認証情報を確認中...", 1, total);
   const authHeader = await getAuthHeader();
   const headers = authHeader ? { Authorization: authHeader } : {};
 
   let audioFetchUrl;
-  let downloadInfo = null;
   if (track.streamUrl) {
     reportProgress(tabId, "ストリーミング情報を取得中...", 2, total);
     try {
@@ -316,82 +351,77 @@ async function downloadZip(track, tabId) {
     reportProgress(tabId, "ダウンロードリンクを取得中...", 2, total);
     const downloadUrl = `https://api-v2.soundcloud.com/tracks/${track.id}/download?client_id=${track.clientId}`;
     const downloadInfoRes = await fetch(downloadUrl, { headers });
-    if (!downloadInfoRes.ok) {
-      const bodyText = await downloadInfoRes.text().catch(() => "");
-      return {
-        ok: false,
-        message: `ダウンロードリンクの取得に失敗しました (status: ${downloadInfoRes.status}, auth: ${authHeader ? "あり" : "なし"}, body: ${bodyText.slice(0, 200)})`
-      };
-    }
-    downloadInfo = await downloadInfoRes.json();
-    if (!downloadInfo.redirectUri) {
-      return { ok: false, message: `redirectUriが応答に含まれていません: ${JSON.stringify(downloadInfo).slice(0, 200)}` };
-    }
+    if (!downloadInfoRes.ok) return { ok: false, message: `ダウンロードリンクの取得に失敗しました` };
+    const downloadInfo = await downloadInfoRes.json();
+    if (!downloadInfo.redirectUri) return { ok: false, message: `redirectUriが応答に含まれていません` };
     audioFetchUrl = downloadInfo.redirectUri;
   }
 
   reportProgress(tabId, "音声ファイルを取得中...", 3, total);
-  
-  // ★ここからHLSとプログレッシブの分岐処理
   let audioData;
   let audioExt = 'mp3';
 
   if (audioFetchUrl.includes('.m3u8')) {
     audioData = await fetchHlsAudio(audioFetchUrl, headers, tabId);
-    // HLS(aac/m4s)の場合は拡張子をm4aにする
     audioExt = audioFetchUrl.includes('aac') ? 'm4a' : 'm4a'; 
   } else {
     const audioRes = await fetch(audioFetchUrl, { headers });
-    if (!audioRes.ok) return { ok: false, message: `音声ファイルの取得に失敗しました (status: ${audioRes.status})` };
+    if (!audioRes.ok) return { ok: false, message: `音声ファイルの取得に失敗しました` };
     const audioBlob = await audioRes.blob();
     const audioContentType = audioRes.headers.get('content-type') || '';
     audioData = new Uint8Array(await audioBlob.arrayBuffer());
 
-    if (audioFetchUrl.includes('.wav') || audioContentType.includes('wav')) {
-      audioExt = 'wav';
-    } else if (audioFetchUrl.includes('.m4a') || audioContentType.includes('m4a') || audioContentType.includes('mp4')) {
-      audioExt = 'm4a';
-    } else if (audioFetchUrl.includes('.ogg') || audioContentType.includes('ogg')) {
-      audioExt = 'ogg';
-    } else if (audioContentType.includes('flac')) {
-      audioExt = 'flac';
-    }
+    if (audioFetchUrl.includes('.wav') || audioContentType.includes('wav')) audioExt = 'wav';
+    else if (audioFetchUrl.includes('.m4a') || audioContentType.includes('m4a') || audioContentType.includes('mp4')) audioExt = 'm4a';
+    else if (audioFetchUrl.includes('.ogg') || audioContentType.includes('ogg')) audioExt = 'ogg';
+    else if (audioContentType.includes('flac')) audioExt = 'flac';
   }
-  // ★ここまで追加・修正部分
 
+  const safeName = safeFileName(track.title);
+  const folderPrefix = prefs.saveDirectory ? `${prefs.saveDirectory}/` : "";
+
+  // ★ 音声のみモードの分岐
+  if (prefs.downloadMode === 'audioOnly') {
+    reportProgress(tabId, "保存中...", 4, total);
+    let mimeType = 'audio/mpeg';
+    if (audioExt === 'm4a') mimeType = 'audio/mp4';
+    else if (audioExt === 'wav') mimeType = 'audio/wav';
+    else if (audioExt === 'ogg') mimeType = 'audio/ogg';
+    else if (audioExt === 'flac') mimeType = 'audio/flac';
+    
+    const content = new Blob([audioData], { type: mimeType });
+    const finalFileName = `${folderPrefix}${safeName}.${audioExt}`;
+    
+    const result = await triggerDownload(content, finalFileName, tabId, !!prefs.saveAs);
+    return result.ok ? { ok: true, message: "音声ファイルの保存が完了しました" } : result;
+  }
+
+  // ★ 今まで通り（ZIP化）モードの分岐
   reportProgress(tabId, "ジャケット画像を取得中...", 4, total);
   let artworkBlob = null;
   if (prefs.includeArtwork && track.artworkUrl) {
     const artworkRes = await fetch(track.artworkUrl);
     if (artworkRes.ok) {
       artworkBlob = await artworkRes.blob();
-      if (prefs.artworkFormat === 'png') {
-        artworkBlob = await convertArtworkBlob(artworkBlob, 'png');
-      }
+      if (prefs.artworkFormat === 'png') artworkBlob = await convertArtworkBlob(artworkBlob, 'png');
     }
   }
 
   reportProgress(tabId, "ZIPを作成中...", 5, total);
-  const safeName = safeFileName(track.title);
-
   const zip = new JSZip();
   const folder = zip.folder(safeName);
   
-  // 取得した音声データをZIPにセット
   folder.file(`${safeName}.${audioExt}`, audioData);
-  
   let artworkExt = 'jpg';
   if (artworkBlob) {
     const artData = new Uint8Array(await artworkBlob.arrayBuffer());
-    const mime = artworkBlob.type || '';
-    if (mime.includes('png')) artworkExt = 'png';
+    if ((artworkBlob.type || '').includes('png')) artworkExt = 'png';
     folder.file(`${safeName}_artwork.${artworkExt}`, artData);
   }
 
   const arrayBuf = await zip.generateAsync({ type: "arraybuffer" });
   const content = new Blob([new Uint8Array(arrayBuf)], { type: "application/zip" });
-
-  const finalFileName = `${safeFileName(safeName)}.zip`;
+  const finalFileName = `${folderPrefix}${safeName}.zip`;
 
   reportProgress(tabId, "保存中...", 6, total);
   const result = await triggerDownload(content, finalFileName, tabId, !!prefs.saveAs);
@@ -404,7 +434,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (tabs[0] && tabs[0].id) {
         chrome.tabs.sendMessage(tabs[0].id, { action: "extractZip" }, (response) => {
           if (chrome.runtime.lastError) {
-            sendResponse({ ok: false, message: `タブへの送信に失敗しました: ${chrome.runtime.lastError.message}` });
+            sendResponse({ ok: false, message: `タブへの送信に失敗しました` });
             return;
           }
           sendResponse(response);
@@ -437,67 +467,3 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 });
-
-async function fetchHlsAudio(m3u8Url, headers, tabId) {
-  let res = await fetch(m3u8Url, { headers });
-  let text = await res.text();
-
-  let lines = text.split('\n').map(l => l.trim()).filter(l => l);
-  if (lines.some(l => l.endsWith('.m3u8'))) {
-    let subUrl = lines.find(l => !l.startsWith('#'));
-    if (!subUrl.startsWith('http')) {
-      subUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1) + subUrl;
-    }
-    res = await fetch(subUrl, { headers });
-    text = await res.text();
-    lines = text.split('\n').map(l => l.trim()).filter(l => l);
-  }
-
-  // ★ Initセグメント(ヘッダー情報)のURLを抽出
-  let initUrl = null;
-  const mapLine = lines.find(l => l.startsWith('#EXT-X-MAP:'));
-  if (mapLine) {
-    const match = mapLine.match(/URI="([^"]+)"/);
-    if (match) {
-      initUrl = match[1];
-      if (!initUrl.startsWith('http')) {
-        initUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1) + initUrl;
-      }
-    }
-  }
-
-  const chunkUrls = lines.filter(l => !l.startsWith('#'));
-  if (chunkUrls.length === 0) throw new Error('HLSプレイリストから音声URLを抽出できませんでした');
-
-  const chunks = [];
-  
-  // ★ チャンク取得前に Initセグメント をダウンロードして先頭に配置
-  if (initUrl) {
-    reportProgress(tabId, `ヘッダー情報(Init)を取得中...`, 0, chunkUrls.length);
-    const initRes = await fetch(initUrl, { headers });
-    if (!initRes.ok) throw new Error(`Initデータの取得に失敗しました`);
-    chunks.push(new Uint8Array(await initRes.arrayBuffer()));
-  }
-
-  for (let i = 0; i < chunkUrls.length; i++) {
-    if (i % 5 === 0 || i === chunkUrls.length - 1) {
-      reportProgress(tabId, `分割データを結合中... (${i + 1}/${chunkUrls.length})`, i + 1, chunkUrls.length);
-    }
-    let chunkUrl = chunkUrls[i];
-    if (!chunkUrl.startsWith('http')) {
-      chunkUrl = m3u8Url.substring(0, m3u8Url.lastIndexOf('/') + 1) + chunkUrl;
-    }
-    const chunkRes = await fetch(chunkUrl, { headers });
-    if (!chunkRes.ok) throw new Error(`チャンクの取得に失敗しました (status: ${chunkRes.status})`);
-    chunks.push(new Uint8Array(await chunkRes.arrayBuffer()));
-  }
-
-  const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
-  const audioData = new Uint8Array(totalLen);
-  let offset = 0;
-  for (const c of chunks) {
-    audioData.set(c, offset);
-    offset += c.length;
-  }
-  return audioData;
-}

@@ -5,37 +5,33 @@
 <style>
   :root{--bg:#ffffff;--text:#111827;--muted:#6b7280;--accent:#ff6a00;--accent-2:#ff924d;--panel:#ffffff;--panel-border:#e5e7eb;--bar-bg:#f1f5f9;--button-shadow:rgba(17,24,39,0.12);}
   .dark{--bg:#111827;--text:#f8fafc;--muted:#94a3b8;--panel:#1f2937;--panel-border:#374151;--bar-bg:#111827;--button-shadow:rgba(0,0,0,0.32);}
-  body { width: 320px; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; padding: 14px; background:var(--bg); color:var(--text); position:relative; margin: 0; }
-  .toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; }
+  body { width: 320px; font-family: system-ui, -apple-system, sans-serif; padding: 16px; background:var(--bg); color:var(--text); margin: 0; }
+  .toolbar { display:flex; gap:10px; align-items:center; justify-content:space-between; margin-bottom: 16px; }
   .toolbar-meta { display:flex; align-items:center; gap:10px; }
-  .toolbar-icon { width:24px; height:24px; border-radius:6px; object-fit:contain; transition: filter 0.2s ease; }
-  .toolbar-text { display:flex; flex-direction:column; gap:4px; }
-  .toolbar-title { font-size:16px; font-weight:700; }
-  .toolbar-link { font-size:12px; color:var(--accent); text-decoration:none; }
-  .settings-button { display:inline-flex; align-items:center; gap:6px; padding:8px 10px; font-size:12px; background:transparent; color:var(--accent); border-radius:8px; border:1px solid rgba(11,92,255,0.24); box-shadow:none; cursor:pointer; }
-  .settings-icon { width:16px; height:16px; transition: filter 0.2s ease; }
+  .toolbar-icon { width:28px; height:28px; border-radius:6px; }
+  .toolbar-text { display:flex; flex-direction:column; gap:2px; }
+  .toolbar-title { font-size:15px; font-weight:700; }
+  .toolbar-link { font-size:11px; color:var(--accent); text-decoration:none; }
+  .settings-button { display:inline-flex; align-items:center; gap:4px; padding:6px 10px; font-size:12px; background:var(--bar-bg); color:var(--text); border-radius:6px; border:1px solid var(--panel-border); cursor:pointer; }
+  .settings-icon { width:14px; height:14px; }
   .dark .settings-icon { filter: brightness(0) invert(1); }
 
-  /* 追加: モード選択のスタイル */
-  .mode-selector { margin-top: 16px; }
-  .mode-selector label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 6px; }
-  .mode-selector select { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--panel-border); background: var(--panel); color: var(--text); font-size: 13px; outline: none; cursor: pointer; transition: border-color 0.2s; }
+  .mode-selector { margin-bottom: 16px; }
+  .mode-selector label { font-size: 12px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 8px; }
+  .mode-selector select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--panel-border); background: var(--panel); color: var(--text); font-size: 13px; outline: none; cursor: pointer; }
   .mode-selector select:focus { border-color: var(--accent); }
 
-  .main-action { display:flex; justify-content:center; margin-top:16px; }
-  /* ボタンの幅を100%に調整 */
-  button.extract-btn { width: 100%; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:10px 12px; font-size:14px; cursor:pointer; border-radius:8px; border:0; background:linear-gradient(180deg,var(--accent),var(--accent-2)); color:#fff; box-shadow:0 6px 16px var(--button-shadow); transition:transform .08s ease; }
-  button.extract-btn:active{ transform:translateY(1px) }
-  button.extract-btn[disabled]{ opacity:0.7; cursor:default }
-  .btn-label{ display:inline-block }
+  button.extract-btn { width: 100%; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:12px; font-size:14px; font-weight: 600; cursor:pointer; border-radius:8px; border:0; background:linear-gradient(180deg,var(--accent),var(--accent-2)); color:#fff; box-shadow:0 4px 12px var(--button-shadow); transition:transform .1s; }
+  button.extract-btn:active{ transform:translateY(2px) }
+  button.extract-btn[disabled]{ opacity:0.7; cursor:default; transform:none; }
+  
   .spinner{ width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,0.4);border-top-color:#fff; animation:spin 0.9s linear infinite; display:none }
   button.loading .spinner{ display:inline-block }
   @keyframes spin{ to{ transform:rotate(360deg) } }
 
-  #status { margin-top:10px; font-size:13px; color:var(--muted); min-height:18px; text-align: center; }
-  #barOuter { margin-top:8px;height:8px;background:var(--bar-bg);border-radius:999px;overflow:hidden;display:none }
-  #barInner { height:100%; width:0%; background:linear-gradient(90deg,var(--accent),#ff9f66); transition:width 0.25s ease; }
-  .small-note{ font-size:12px;color:var(--muted);margin-top:8px; text-align: center; }
+  #status { margin-top:16px; font-size:12px; font-weight: 600; color:var(--accent); text-align: center; min-height: 18px;}
+  #barOuter { margin-top:8px;height:6px;background:var(--bar-bg);border-radius:3px;overflow:hidden;display:none }
+  #barInner { height:100%; width:0%; background:var(--accent); transition:width 0.2s ease; }
 </style>
 </head>
 <body>
@@ -43,39 +39,30 @@
     <div class="toolbar-meta">
       <img class="toolbar-icon" src="image/icon.png" alt="SCZip" />
       <div class="toolbar-text">
-        <div class="toolbar-title">SCZip</div>
-        <a class="toolbar-link" href="https://github.com/ruka9dx/SCZip" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <div class="toolbar-title">SCZip <span id="popupVersion" style="font-size:10px; font-weight:normal; color:var(--muted)"></span></div>
+        <a class="toolbar-link" href="https://github.com/ruka9dx/SCZip" target="_blank">GitHub</a>
       </div>
     </div>
     <button id="openOptions" class="settings-button">
-      <img class="settings-icon" src="image/settings.png" alt="設定" />
-      設定
+      <img class="settings-icon" src="image/settings.png" alt="設定" /> 設定
     </button>
   </div>
 
-  <!-- 追加: ポップアップ内のモード切り替え -->
   <div class="mode-selector">
-    <label for="popupMode">保存モード</label>
+    <label for="popupMode">保存するデータ</label>
     <select id="popupMode">
-      <option value="zip">ジャケット+音声をZIP化</option>
-      <option value="audioOnly">音声ファイルのみ (.m4a/.mp3等)</option>
+      <option value="audioOnly">音声ファイルのみ (mp3)</option>
+      <option value="audioAndArtwork">音声 (mp3) ＋ ジャケット画像</option>
     </select>
   </div>
 
-  <div class="main-action">
-    <button id="extractBtn" class="extract-btn">
-      <span class="spinner" aria-hidden></span>
-      <span class="btn-label" id="btnLabel">ジャケット+音声をZIPで保存</span>
-    </button>
-  </div>
+  <button id="extractBtn" class="extract-btn">
+    <span class="spinner" aria-hidden></span>
+    <span class="btn-label" id="btnLabel">音声のみ (mp3) を保存</span>
+  </button>
   
   <div id="status"></div>
   <div id="barOuter"><div id="barInner"></div></div>
-  
-  <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:12px;">
-    <div class="small-note" style="margin:0">ダウンロードは許可された楽曲のみ実行してください</div>
-    <div id="popupVersion" style="font-size:12px;color:var(--muted)"></div>
-  </div>
   
   <script src="popup.js"></script>
 </body>

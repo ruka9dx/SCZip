@@ -6,9 +6,10 @@ const defaults = {
   customSize: 512,
   customUnit: 'KB',
   theme: 'light',
-  downloadMode: 'zip',
   saveDirectory: '',
-  showConfirmDialog: true // ★追加
+  showConfirmDialog: true,
+  zipEnabled: false,
+  downloadMode: 'audioOnly' // 重複を解消し、デフォルトを音声のみにしました
 };
 
 let systemThemeQuery = null;
@@ -19,7 +20,8 @@ function applyTheme(theme) {
     const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     document.body.classList.toggle('dark', isDark);
     $('themeSystem').classList.add('active');
-    $('themeLight').classList.remove('active');$('themeDark').classList.remove('active');
+    $('themeLight').classList.remove('active');
+    $('themeDark').classList.remove('active');
     if (!systemThemeQuery) {
       systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
       systemThemeQuery.addEventListener('change', onSystemThemeChange);
@@ -27,7 +29,8 @@ function applyTheme(theme) {
   } else {
     document.body.classList.toggle('dark', theme === 'dark');
     $('themeLight').classList.toggle('active', theme === 'light');
-    $('themeDark').classList.toggle('active', theme === 'dark');$('themeSystem').classList.remove('active');
+    $('themeDark').classList.toggle('active', theme === 'dark');
+    $('themeSystem').classList.remove('active');
     if (systemThemeQuery) {
       systemThemeQuery.removeEventListener('change', onSystemThemeChange);
       systemThemeQuery = null;
@@ -48,10 +51,11 @@ async function load() {
   $('customSize').value = data.customSize || defaults.customSize;
   $('customUnit').value = data.customUnit || defaults.customUnit;
   
-  if ($('downloadMode'))$('downloadMode').value = data.downloadMode || defaults.downloadMode;
-  if ($('saveDirectory'))$('saveDirectory').value = data.saveDirectory || defaults.saveDirectory;
-  // ★追加：設定画面に読み込み
-  if ($('showConfirmDialog'))$('showConfirmDialog').checked = data.showConfirmDialog !== false;
+  if ($('downloadMode')) $('downloadMode').value = data.downloadMode || defaults.downloadMode;
+  if ($('saveDirectory')) $('saveDirectory').value = data.saveDirectory || defaults.saveDirectory;
+  if ($('showConfirmDialog')) $('showConfirmDialog').checked = data.showConfirmDialog !== false;
+  // ★追加：ZIP設定の読み込み
+  if ($('zipEnabled')) $('zipEnabled').checked = !!data.zipEnabled;
 
   applyTheme(data.theme || defaults.theme);
   document.getElementById('customRow').style.display = (data.chunkMode === 'custom') ? 'block' : 'none';
@@ -68,9 +72,9 @@ function showStatus(msg) {
 }
 
 async function save() {
-  const selectedTheme = $('themeDark').classList.contains('active') ? 'dark' :$('themeSystem').classList.contains('active') ? 'system' : 'light';
+  const selectedTheme = $('themeDark').classList.contains('active') ? 'dark' : $('themeSystem').classList.contains('active') ? 'system' : 'light';
   
-  let dir = $('saveDirectory') ?$('saveDirectory').value.trim() : '';
+  let dir = $('saveDirectory') ? $('saveDirectory').value.trim() : '';
   dir = dir.replace(/^\/+|\/+$/g, '');
 
   const obj = {
@@ -81,10 +85,11 @@ async function save() {
     customSize: Number($('customSize').value) || defaults.customSize,
     customUnit: $('customUnit').value || defaults.customUnit,
     theme: selectedTheme,
-    downloadMode: $('downloadMode') ?$('downloadMode').value : defaults.downloadMode,
+    downloadMode: $('downloadMode') ? $('downloadMode').value : defaults.downloadMode,
     saveDirectory: dir,
-    // ★追加：設定を保存
-    showConfirmDialog: $('showConfirmDialog') ?$('showConfirmDialog').checked : defaults.showConfirmDialog
+    showConfirmDialog: $('showConfirmDialog') ? $('showConfirmDialog').checked : defaults.showConfirmDialog,
+    // ★追加：ZIP設定の保存
+    zipEnabled: $('zipEnabled') ? $('zipEnabled').checked : defaults.zipEnabled
   };
   await new Promise((r) => chrome.storage.sync.set(obj, r));
   showStatus('設定を保存しました');

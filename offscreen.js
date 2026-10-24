@@ -7,7 +7,7 @@ async function initFFmpeg() {
     const { createFFmpeg } = FFmpeg;
     ffmpeg = createFFmpeg({
       corePath: chrome.runtime.getURL("lib/ffmpeg-core.js"),
-      log: false, // ログを出したい場合は true に
+      log: true, // 開発用にログをオンにしています
     });
     await ffmpeg.load();
   }
@@ -15,7 +15,6 @@ async function initFFmpeg() {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // MP3への変換リクエスト
   if (msg.action === "convertChunk") {
     (async () => {
       try {
@@ -38,10 +37,43 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const outputName = `output.mp3`;
           
           f.FS("writeFile", inputName, fullArray);
-          // mp3 (192kbps) に変換
-          await f.run("-i", inputName, "-c:a", "libmp3lame", "-b:a", "192k", outputName);
+          
+          const args = ["-i", inputName];
+          
+          // ★音声ストリームのみを抽出し、不要なデータ（壊れた画像タグなど）を排除
+          args.push("-map", "0:a");
+          // ★元のメタデータを完全に消去
+          args.push("-map_metadata", "-1");
+          
+          if (msg.originalExt === 'mp3') {
+            args.push("-c:a", "copy");
+          } else {
+            args.push("-c:a", "libmp3lame", "-b:a", "192k");
+          }
+
+          // ★Windowsエクスプローラー対策の最強設定
+          args.push("-id3v2_version", "3"); // 互換性重視のID3v2.3
+          args.push("-write_id3v2", "1");   // コピー時にもID3を強制書き込み
+
+          // メタデータの追加（アルバム名等も埋めると認識されやすいです）
+          if (msg.title) {
+            args.push("-metadata", `title=${msg.title}`);
+            args.push("-metadata", `album=${msg.title}`);
+          }
+          if (msg.artist) {
+            args.push("-metadata", `artist=${msg.artist}`);
+            args.push("-metadata", `album_artist=${msg.artist}`);
+          }
+          
+          // ★強制的にmp3フォーマットで出力
+          args.push("-f", "mp3");
+          args.push(outputName);
+          
+          // 変換実行
+          await f.run(...args);
           const outputData = f.FS("readFile", outputName);
           
+          // メモリ解放
           f.FS("unlink", inputName);
           f.FS("unlink", outputName);
 
@@ -58,7 +90,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // 既存のダウンロード用URL作成リクエスト
   if (msg.action === "createBlobUrlChunk") {
     if (!chunksMap[msg.id]) chunksMap[msg.id] = [];
     chunksMap[msg.id][msg.index] = new Uint8Array(msg.numbers);
